@@ -1,0 +1,92 @@
+// 1. Configuración de Prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 2. Definición de Estados Estrictos
+enum ReservationType {
+  GUARANTEED  // Pago 100% anticipado
+  EXPRESS     // Sin pago, con 5 min de tolerancia
+}
+
+enum ReservationStatus {
+  PENDING     // Esperando check-in
+  PAID        // Pagada anticipadamente
+  ACTIVE      // Vehículo en el parqueadero
+  COMPLETED   // Check-out realizado y cobrado
+  CANCELLED   // Cancelada por el usuario o por el CRON Job
+}
+
+enum KybStatus {
+  PENDING     // Ticket en revisión por Admin
+  APPROVED    // Operador verificado y visible
+  REJECTED    // Documentos con errores
+}
+
+// 3. Modelos de Base de Datos
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  password     String?       // Opcional por si entra con Google
+  name         String?
+  role         String        @default("CLIENT") // CLIENT, ADMIN
+  reservations Reservation[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Park {
+  id             String        @id @default(uuid())
+  name           String
+  address        String
+  totalCells     Int
+  latitude       Float?
+  longitude      Float?
+  pricePerHour   Float?    @default(5000) // Tarifa por hora
+  
+  // Flujo KYB del Operador
+  operatorId     String
+  kybStatus      KybStatus     @default(PENDING)
+  rutDocumentUrl String?       // URL del documento RUT cargado
+  kybComments    String?       // Razón de rechazo si el admin lo devuelve
+  
+  reservations   Reservation[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Reservation {
+  id              String            @id @default(uuid())
+  type            ReservationType
+  status          ReservationStatus @default(PENDING)
+  
+  // Tiempos
+  startTime       DateTime
+  endTime         DateTime?         
+  expiresAt       DateTime?         
+  
+  // 1. Asignación dinámica de celda al leer QR (Nueva precisión)
+  assignedCell    String?   
+  
+  // 2. Control de alerta preventiva de sobretiempo (Nueva precisión)
+  isWarningSent   Boolean           @default(false)
+  
+  // 3. Contingencia por contingencia de Overstay (Nueva precisión)
+  redirectedToId  String?           
+  
+  // Seguridad
+  qrToken         String            @unique
+  
+  // Relaciones
+  userId          String
+  user            User              @relation(fields: [userId], references: [id])
+  parkId          String
+  park            Park              @relation(fields: [parkId], references: [id])
+  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
